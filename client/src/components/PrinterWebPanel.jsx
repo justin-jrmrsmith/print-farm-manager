@@ -6,6 +6,8 @@ import { useState } from 'react';
 //   /webcam/webrtc  camera-streamer style WebRTC player (redirects to /webcam/player
 //                   when the camera is set to iframe/H264 mode)
 //   /filament/      Filament Manager UI (firmware v1.5.2-paxx12-21 or newer)
+//   /screen/        Remote Screen: mirror of the printer touchscreen with touch
+//                   control (must be enabled in firmware-config, Web section)
 // The frames load straight from the printer, so the browser viewing this page
 // must be able to reach the printer IP over plain HTTP. Changes made inside the
 // filament frame go directly to the printer's Moonraker; this app does not see
@@ -110,6 +112,14 @@ export default function PrinterWebPanel({ ip }) {
         title="Filament"
         src={`${base}/filament/`}
         frameStyle={{ height: 640 }}
+      />
+      {/* The touchscreen is 800x480; the page scales the image to fit and maps
+          clicks back to screen coordinates, so a matching aspect ratio avoids
+          letterboxing. Clicks here press buttons on the real printer. */}
+      <EmbedCard
+        title="Screen"
+        src={`${base}/screen/`}
+        frameStyle={{ aspectRatio: '5 / 3' }}
       />
     </div>
   );
