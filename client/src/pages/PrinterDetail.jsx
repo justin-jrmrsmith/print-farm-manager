@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import PrinterWebPanel from '../components/PrinterWebPanel.jsx';
 
 function formatTimestamp(ms) {
   if (!ms) return '—';
@@ -238,8 +239,19 @@ export default function PrinterDetail() {
 
   const sc = STATUS_COLORS[printer.status] || STATUS_COLORS.UNKNOWN;
 
+  // Klipper printers (Snapmaker U1 on the paxx12 Extended Firmware) get a
+  // right-hand panel embedding the printer's camera and Filament Manager pages.
+  const showWebPanel = printer.type === 'klipper';
+
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div className={showWebPanel ? 'pd-layout' : undefined}>
+      <style>{`
+        .pd-layout { display: grid; grid-template-columns: minmax(0, 720px) minmax(360px, 1fr); gap: 24px; align-items: start; max-width: 1500px; }
+        @media (max-width: 1100px) {
+          .pd-layout { grid-template-columns: minmax(0, 1fr); }
+        }
+      `}</style>
+    <div style={{ maxWidth: 720, minWidth: 0 }}>
       {/* Back link */}
       <button
         onClick={() => navigate('/printers')}
@@ -659,6 +671,12 @@ export default function PrinterDetail() {
             </div>
           )}
         </div>
+      )}
+    </div>
+      {showWebPanel && (
+        <aside className="pd-side">
+          <PrinterWebPanel ip={printer.ip} />
+        </aside>
       )}
     </div>
   );
