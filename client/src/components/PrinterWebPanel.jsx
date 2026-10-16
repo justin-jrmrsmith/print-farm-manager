@@ -102,6 +102,14 @@ export default function PrinterWebPanel({ ip }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* The touchscreen is 800x480; the page scales the image to fit and maps
+          clicks back to screen coordinates, so a matching aspect ratio avoids
+          letterboxing. Clicks here press buttons on the real printer. */}
+      <EmbedCard
+        title="Screen"
+        src={`${base}/screen/`}
+        frameStyle={{ aspectRatio: '5 / 3' }}
+      />
       <EmbedCard
         title="Camera"
         src={`${base}/${camera}/webrtc`}
@@ -112,14 +120,6 @@ export default function PrinterWebPanel({ ip }) {
         title="Filament"
         src={`${base}/filament/`}
         frameStyle={{ height: 640 }}
-      />
-      {/* The touchscreen is 800x480; the page scales the image to fit and maps
-          clicks back to screen coordinates, so a matching aspect ratio avoids
-          letterboxing. Clicks here press buttons on the real printer. */}
-      <EmbedCard
-        title="Screen"
-        src={`${base}/screen/`}
-        frameStyle={{ aspectRatio: '5 / 3' }}
       />
     </div>
   );
