@@ -21,6 +21,7 @@ const path     = require('path');
 const fs       = require('fs');
 const os       = require('os');
 
+let TOOL_FILAMENTS;
 let db;
 let app;
 
@@ -49,7 +50,7 @@ beforeEach(() => {
       job_time_remaining  INTEGER,
       serial_number       TEXT DEFAULT '',
       loaded_material     TEXT,
-      loaded_color        TEXT
+      loaded_color        TEXT, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +90,7 @@ beforeEach(() => {
       material_grams    REAL,
       allowed_groups    TEXT,
       required_material TEXT,
-      required_color    TEXT
+      required_color    TEXT, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,6 +134,7 @@ beforeEach(() => {
   `);
 
   const now = Date.now();
+  TOOL_FILAMENTS = JSON.stringify([{ tool: 0, type: 'PETG', color: '#CC0000', grams: 45.5, mm: 15000 }]);
 
   db.prepare(`
     INSERT INTO printers
@@ -156,11 +158,11 @@ beforeEach(() => {
   db.prepare(`
     INSERT INTO gcodes
       (part_id, printer_model, filename, filepath, parts_per_plate, est_print_secs, created_at,
-       ams_slot, material_grams, allowed_groups, required_material, required_color)
+       ams_slot, material_grams, allowed_groups, required_material, required_color, tool_filaments)
     VALUES
       (1, 'x1c', 'part.gcode', 'part_stub.gcode', 4, 3600, ?,
-       2, 45.5, '["Bambu Farm"]', 'PETG', 'Red')
-  `).run(now);
+       2, 45.5, '["Bambu Farm"]', 'PETG', 'Red', ?)
+  `).run(now, TOOL_FILAMENTS);
 
   // Two types/colors (not one) so a restore that gets the filament_colors -> filament_types
   // FK order wrong, or maps a color to the wrong type, doesn't slip through by coincidence.
@@ -214,6 +216,7 @@ describe('Backup export/restore — column round-trip regression', () => {
       allowed_groups: '["Bambu Farm"]',
       required_material: 'PETG',
       required_color: 'Red',
+      tool_filaments: TOOL_FILAMENTS,
     });
   });
 
@@ -228,7 +231,7 @@ describe('Backup export/restore — column round-trip regression', () => {
       db.prepare("UPDATE printers SET serial_number = '', loaded_material = NULL, loaded_color = NULL").run();
       db.prepare("UPDATE projects SET required_material = NULL, required_color = NULL, allowed_groups = NULL").run();
       db.prepare("UPDATE parts SET print_time_seconds = NULL, material_grams = NULL").run();
-      db.prepare("UPDATE gcodes SET ams_slot = NULL, material_grams = NULL, allowed_groups = NULL, required_material = NULL, required_color = NULL").run();
+      db.prepare("UPDATE gcodes SET ams_slot = NULL, material_grams = NULL, allowed_groups = NULL, required_material = NULL, required_color = NULL, tool_filaments = NULL").run();
 
       const restoreRes = await request(app)
         .post('/api/backup/restore')
@@ -257,6 +260,7 @@ describe('Backup export/restore — column round-trip regression', () => {
       expect(gcode.allowed_groups).toBe('["Bambu Farm"]');
       expect(gcode.required_material).toBe('PETG');
       expect(gcode.required_color).toBe('Red');
+      expect(gcode.tool_filaments).toBe(TOOL_FILAMENTS);
     } finally {
       fs.unlinkSync(backupFile);
     }

@@ -60,7 +60,7 @@ beforeEach(() => {
       printer_model TEXT NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL,
       parts_per_plate INTEGER NOT NULL, est_print_secs INTEGER, material_grams REAL,
       ams_slot INTEGER, allowed_groups TEXT, required_material TEXT, required_color TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, part_id INTEGER, gcode_id INTEGER,
@@ -154,5 +154,30 @@ describe('estimates read from the uploaded file', () => {
     expect(res.status).toBe(201);
     expect(res.body.est_print_secs).toBeNull();
     expect(res.body.material_grams).toBeNull();
+  });
+});
+
+describe('per-tool filament read from the uploaded file', () => {
+  test('a multi-colour Orca .gcode stores each used tool for slot matching', async () => {
+    const body = Buffer.from([
+      'G28',
+      '; filament used [mm] = 1085.19, 0.00, 458.74',
+      '; filament used [g] = 3.24, 0.00, 1.37',
+      '; filament_colour = #0000FF;#80FFFF;#FFFFFF',
+      '; filament_type = PLA;PLA;PETG',
+      '',
+    ].join('\n'));
+    const res = track(await upload('earring.gcode', body));
+    expect(res.status).toBe(201);
+    expect(JSON.parse(res.body.tool_filaments)).toEqual([
+      { tool: 0, type: 'PLA',  color: '#0000FF', grams: 3.24, mm: 1085.19 },
+      { tool: 2, type: 'PETG', color: '#FFFFFF', grams: 1.37, mm: 458.74 },
+    ]);
+  });
+
+  test('files without per-tool lists store null, leaving dispatch unchanged', async () => {
+    const res = track(await upload('plain2.gcode', Buffer.from('G28\n; total filament used [g] = 4\n')));
+    expect(res.status).toBe(201);
+    expect(res.body.tool_filaments).toBeNull();
   });
 });

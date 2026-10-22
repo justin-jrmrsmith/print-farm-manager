@@ -19,7 +19,7 @@ beforeEach(() => {
   db = new Database(':memory:');
   db.exec(`
     CREATE TABLE printers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, status TEXT DEFAULT 'active',
@@ -33,7 +33,7 @@ beforeEach(() => {
     CREATE TABLE gcodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT, part_id INTEGER NOT NULL, printer_model TEXT NOT NULL,
       filename TEXT NOT NULL, filepath TEXT NOT NULL, parts_per_plate INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, part_id INTEGER NOT NULL, printer_id INTEGER NOT NULL,

@@ -36,6 +36,30 @@ const MATCH_STATE = {
   unknown:        { text: '#94a3b8', label: 'Unknown' },
 };
 
+// A small filament colour chip. Used for multi-colour files and multi-head printers.
+function Swatch({ color, title }) {
+  return (
+    <span title={title} style={{
+      display: 'inline-block', width: 10, height: 10, borderRadius: 2, marginRight: 4,
+      verticalAlign: 'middle', background: color || 'transparent', border: '1px solid #2d3748',
+    }} />
+  );
+}
+
+// "T1 PLA [chip]  T2 PLA [chip]" for a multi-colour G-code. Tools are shown 1-based to
+// match the slicer's filament numbers.
+function ToolFilaments({ tools }) {
+  return (
+    <span>
+      {tools.map(t => (
+        <span key={t.tool} style={{ marginRight: 10, whiteSpace: 'nowrap' }}>
+          {t.tool + 1}: <Swatch color={t.color} title={`${t.type} ${t.color}`} />{t.type}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 // Per-G-code printer list under the dispatch diagnostic: every active printer of the
 // G-code's model, what it has loaded, whether it matches, and (for ready printers) what
 // the scheduler would actually hand it next. Each name links to the printer's detail
@@ -45,20 +69,31 @@ function PrinterMatchList({ gcodes, partId }) {
   return (
     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {gcodes.map(g => {
-        const want = [g.required_material, g.required_color].filter(Boolean).join(' / ') || 'any filament';
+        const want = [g.required_material, g.required_color].filter(Boolean).join(' / ') ||
+          (g.tool_filaments ? `${g.tool_filaments.length} filament${g.tool_filaments.length === 1 ? '' : 's'}` : 'any filament');
         const groups = g.allowed_groups ? g.allowed_groups.join(', ') : 'any group';
         return (
           <div key={g.gcode_id}>
             <div style={{ color: '#e2e8f0', fontWeight: 600 }}>
               {g.filename} <span style={{ color: '#64748b', fontWeight: 400 }}>needs {g.printer_model}, {want}, {groups}</span>
             </div>
+            {g.tool_filaments && (
+              <div style={{ color: '#94a3b8', fontSize: 12, margin: '2px 0 4px' }}>
+                <ToolFilaments tools={g.tool_filaments} />
+              </div>
+            )}
             {g.printers.length === 0 ? (
               <div style={{ color: '#64748b' }}>No active {g.printer_model} printers.</div>
             ) : (
               <div className="match-table" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) minmax(90px, auto) minmax(110px, auto) 2fr', columnGap: 12, rowGap: 2 }}>
                 {g.printers.map(p => {
                   const st = MATCH_STATE[p.state] || MATCH_STATE.unknown;
-                  const loaded = [p.loaded_material, p.loaded_color].filter(Boolean).join(' / ') || 'nothing set';
+                  const loaded = p.filament_slots
+                    ? p.filament_slots.map(s => (
+                        <Swatch key={s.slot} color={s.loaded ? s.color : null}
+                          title={`Head ${s.slot + 1}: ${s.loaded ? `${s.type} ${s.color}` : 'empty'}`} />
+                      ))
+                    : ([p.loaded_material, p.loaded_color].filter(Boolean).join(' / ') || 'nothing set');
                   let next = '';
                   if (p.state === 'ready') {
                     if (!p.next_up) next = '';
@@ -66,6 +101,11 @@ function PrinterMatchList({ gcodes, partId }) {
                     else next = `Next up: ${p.next_up.part_name} (${p.next_up.project_name}), higher priority`;
                   } else if (p.state === 'busy' || p.state === 'held') {
                     next = p.status;
+                  }
+                  if (p.slot_reason) next = p.slot_reason;
+                  else if (p.tool_map && p.state !== 'wrong_group') {
+                    const mapText = p.tool_map.map(([t, h]) => `${t + 1}→head ${h + 1}`).join(', ');
+                    next = next ? `${next} (${mapText})` : mapText;
                   }
                   return (
                     <div key={p.id} style={{ display: 'contents' }}>

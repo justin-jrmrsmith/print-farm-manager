@@ -259,12 +259,14 @@ module.exports = (db, scheduler = null) => {
 
           db.prepare(`
             INSERT INTO gcodes (part_id, printer_model, filename, filepath, parts_per_plate,
-                                est_print_secs, material_grams, ams_slot, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                est_print_secs, material_grams, ams_slot, tool_filaments, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             partResult.lastInsertRowid, gcode.printer_model, gcode.filename, newFilepath,
             gcode.parts_per_plate, gcode.est_print_secs ?? null, gcode.material_grams ?? null,
-            gcode.ams_slot ?? null, now
+            // tool_filaments must travel with the file: without it a multi-colour copy
+            // would dispatch to a U1 with no slot check at all.
+            gcode.ams_slot ?? null, gcode.tool_filaments ?? null, now
           );
           copiedGcodes++;
         }

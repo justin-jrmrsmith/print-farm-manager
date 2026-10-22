@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-10-21: multi-colour files only go to a U1 with the right filaments, in any head order
+
+Dispatch checked one material and one colour per printer. A Snapmaker U1 has four heads, and a multi-colour file expects a specific filament on each of its tools, so the farm would send a black-and-red file to any U1 marked "PLA / Black", with no check that red was loaded or that either colour sat on the head the file expected. Justin hit this running multi-colour prints across several U1s.
+
+The U1 firmware already solves the head-order half: it keeps a table from the file's logical tools to its physical heads and applies it to every tool change, nozzle temperature and Snapmaker macro, which is how the slicer's "send and print" lets you pick heads. The farm now does the same, so the G-code is never edited:
+
+- **At upload** the file's per-tool filament (Orca config block: `filament_colour`, `filament_type`, `filament used [g]` / `[mm]`) is stored in `gcodes.tool_filaments`, used tools only.
+- **On every poll** the Klipper driver reads the U1's `print_task_config` (the data the printer's filament page edits) and the poller stores the four heads in `printers.filament_slots`.
+- **At dispatch** (`server/slot-match.js`) every used tool needs its own loaded head with the same material type and a colour within tolerance (CIE76 delta E, default 15, set in Settings). The closest assignment wins. A part that does not fit is skipped for that printer and the next part is tried, as at a ceiling. A slot reading older than 60 s is refused.
+- **At print start** the file is uploaded without `print=true` and started with `SDCARD_PRINT_FILE_WITH_PARAMETERS ... MAP_TABLE="[[0,2],[1,0]]" FILAMENT_USED_G=... FILAMENT_USED_MM=...`, the command Snapmaker's Moonraker sends for a slicer print. The usage lists also mark which heads are in use, so the firmware runs the per-head pre-extrusion the file asks for. A plain `SDCARD_PRINT_FILE` start left every head marked unused, so that step was being skipped.
+
+Files without per-tool lists, files uploaded before this change, and every printer that does not report slots dispatch exactly as before. The dispatch check on the Projects page and the forward schedule apply the same rule, and the check shows each file's colours, each U1's heads, and the head map or the missing filament. Duplicating a project now carries `tool_filaments` with the copied G-code; without it a copy would have dispatched with no slot check.
+
+Field names, the map command, its parameter format and Klipper's quoting rules were all taken from Snapmaker's published firmware (`Snapmaker/u1-klipper` `print_task_config.py`, `virtual_sdcard.py`, `gcode.py`; `Snapmaker/u1-moonraker` `klippy_apis.py`), and the paxx12 filament page's own reads and writes. The start command built for a real 3-colour U1 file was parsed with the firmware's own tokenizer and `ast.literal_eval`. Implemented from firmware source and mocked tests. **Not yet validated on a U1.**
+
+Part counts are untouched: nothing here changes any path that credits `completed_qty`.
+
+### Changes
+- `server/slot-match.js` (new): per-head matching (`evaluate`, `matchSlots`, CIE76 `colorDistance`, `readTolerance`), `SLOT_DATA_MAX_AGE_MS`, `DEFAULT_COLOR_TOLERANCE`.
+- `server/slicer-metadata.js`: `parseToolFilaments`; `readSlicerMetadata` returns `tool_filaments`.
+- `server/drivers/klipper.js`: `getStatus` queries `print_task_config` and returns `filamentSlots`; `uploadAndPrint` honours `options.toolMap` with a parameterised start (`buildMappedStartScript`), uploading a mapped print under a name Klipper can quote.
+- `server/poller.js`: stores `filamentSlots` in `printers.filament_slots` / `filament_slots_at`.
+- `server/scheduler.js`: slot check in the `_reserveJob` candidate loop (fresh slot read from the DB), tool map passed to the driver.
+- `server/candidate-query.js`: both column lists select `gcodes.tool_filaments`; header notes slot matching lives outside SQL.
+- `server/projection.js`, `server/schedule-state.js`: projection applies the slot rule; fingerprint (now `v2`) includes `filament_slots` and `tool_filaments`.
+- `server/routes/parts.js`: dispatch-status / queue mirror the slot rule (`wrong_filament`, `slot_reason`, `tool_map`, `filament_slots`, `tool_filaments`).
+- `server/routes/gcodes.js`: stores `tool_filaments` on upload. `server/routes/projects.js`: duplicate copies it.
+- `server/routes/settings.js`: `filament_color_tolerance` (1 to 50).
+- `server/db.js`: additive columns `gcodes.tool_filaments`, `printers.filament_slots`, `printers.filament_slots_at`.
+- `client/src/pages/Projects.jsx`: colour chips for file tools and U1 heads, head map or missing-filament reason in the printer list. `client/src/pages/Settings.jsx`: colour tolerance field.
+- Tests: `slot-match.test.js` (new, 17), `scheduler-slots.test.js` (new, 5), plus additions to `klipper-driver`, `slicer-metadata`, `dispatch-status`, `schedule-projection`, `gcodes-slicer-estimates`, `projects-duplicate`, `backup-restore`, `settings`; inline test schemas gained the new columns.
+- `docs/filaments.md`, `docs/api.md`, `docs/database.md`, `docs/driver-authoring.md`, `docs/poller.md`.
+
 ## 2026-09-30: Print Queue page under Fleet
 
 The dispatch check on the Projects page explains one part at a time, and the Schedule page shows time rather than eligibility. Neither answers the question an operator asks walking the floor: "what is waiting, in what order, and which printers can take it?" The new Print Queue page (sidebar, indented under Fleet, at `/fleet/queue`) lists every open part of every active project in the scheduler's own order, with a tag for each printer that matches the part (model, group, loaded filament) coloured by whether it is ready, busy, or awaiting sign-off. `NEXT` marks a ready printer that would print this part on its next dispatch. A part with no matching printer shows why instead: no G-code, no active printer of that model, none in the allowed groups, or none with the required filament loaded.

@@ -74,3 +74,18 @@ describe('PUT /api/settings/dispatch_batch_size', () => {
     expect(res.body.error).toMatch(/unknown setting key/i);
   });
 });
+
+describe('PUT /api/settings/filament_color_tolerance', () => {
+  test('stores a tolerance in range', async () => {
+    const res = await request(app).put('/api/settings/filament_color_tolerance').send({ value: 20 });
+    expect(res.status).toBe(200);
+    expect(db.prepare("SELECT value FROM settings WHERE key = 'filament_color_tolerance'").get().value).toBe('20');
+  });
+
+  test('rejects a tolerance out of range or not a number', async () => {
+    for (const value of [0, 51, 'wide']) {
+      const res = await request(app).put('/api/settings/filament_color_tolerance').send({ value });
+      expect(res.status).toBe(400);
+    }
+  });
+});

@@ -30,7 +30,7 @@ beforeEach(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, ip TEXT NOT NULL DEFAULT '',
       api_key TEXT NOT NULL DEFAULT '', group_name TEXT, type TEXT DEFAULT 'prusa', model TEXT NOT NULL DEFAULT 'mk4s',
       status TEXT DEFAULT 'FINISHED', is_held INTEGER DEFAULT 1, is_active INTEGER DEFAULT 1,
-      decommissioned_at INTEGER, decommission_note TEXT, created_at INTEGER NOT NULL
+      decommissioned_at INTEGER, decommission_note TEXT, created_at INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, status TEXT DEFAULT 'active',
@@ -43,7 +43,7 @@ beforeEach(() => {
     );
     CREATE TABLE gcodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT, part_id INTEGER NOT NULL, printer_model TEXT NOT NULL,
-      filename TEXT NOT NULL, filepath TEXT NOT NULL, parts_per_plate INTEGER NOT NULL, created_at INTEGER NOT NULL
+      filename TEXT NOT NULL, filepath TEXT NOT NULL, parts_per_plate INTEGER NOT NULL, created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, part_id INTEGER NOT NULL, printer_id INTEGER NOT NULL,

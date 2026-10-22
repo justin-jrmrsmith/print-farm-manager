@@ -41,7 +41,7 @@ beforeAll(() => {
       serial_number     TEXT DEFAULT '',
       loaded_material   TEXT,
       loaded_color      TEXT,
-      created_at        INTEGER NOT NULL
+      created_at        INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE printer_groups (name TEXT PRIMARY KEY, created_at INTEGER NOT NULL);
     CREATE TABLE printer_models (model_id TEXT PRIMARY KEY, connector TEXT, display_name TEXT);

@@ -16,7 +16,7 @@ beforeEach(() => {
     CREATE TABLE printers (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT,
       model TEXT NOT NULL, group_name TEXT, loaded_material TEXT, loaded_color TEXT,
-      status TEXT DEFAULT 'IDLE', is_held INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1
+      status TEXT DEFAULT 'IDLE', is_held INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +37,7 @@ beforeEach(() => {
       part_id INTEGER NOT NULL, printer_model TEXT NOT NULL,
       filename TEXT NOT NULL, filepath TEXT NOT NULL, parts_per_plate INTEGER NOT NULL,
       est_print_secs INTEGER, allowed_groups TEXT, required_material TEXT, required_color TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -251,5 +251,55 @@ describe('GET /api/parts/:id/dispatch-status', () => {
       const res = await request(app).get(`/api/parts/${partId}/dispatch-status`);
       expect(res.body.gcodes[0].printers[0]).toMatchObject({ state: 'busy', next_up: null });
     });
+  });
+});
+
+// Multi-colour files on multi-head printers (Snapmaker U1): the diagnostic must agree with
+// the scheduler's slot check (server/slot-match.js) and say which filament is missing.
+describe('GET /api/parts/:id/dispatch-status: filament slots', () => {
+  const TOOLS = JSON.stringify([
+    { tool: 0, type: 'PLA', color: '#000000', grams: 3, mm: 1000 },
+    { tool: 1, type: 'PLA', color: '#FF0000', grams: 1, mm: 300 },
+  ]);
+  function seedU1(slots) {
+    db.prepare(`INSERT INTO printers (name, model, status, is_held, is_active, filament_slots, filament_slots_at)
+                VALUES ('U1-A', 'u1', 'IDLE', 0, 1, ?, ?)`).run(JSON.stringify(slots), Date.now());
+  }
+  function seedMultiGcode(partId) {
+    db.prepare(`INSERT INTO gcodes (part_id, printer_model, filename, filepath, parts_per_plate, tool_filaments, created_at)
+                VALUES (?, 'u1', 'earring.gcode', 'earring.gcode', 1, ?, ?)`).run(partId, TOOLS, now);
+  }
+
+  test('a printer holding both colours on other heads is ready, with the tool map', async () => {
+    const partId = seedPart(seedProject());
+    seedMultiGcode(partId);
+    seedU1([
+      { slot: 0, loaded: true, type: 'PLA', color: '#E00000' },
+      { slot: 1, loaded: false, type: null, color: null },
+      { slot: 2, loaded: true, type: 'PLA', color: '#101010' },
+      { slot: 3, loaded: false, type: null, color: null },
+    ]);
+    const res = await request(app).get(`/api/parts/${partId}/dispatch-status`);
+    expect(res.status).toBe(200);
+    expect(res.body.dispatchable).toBe(true);
+    const p = res.body.gcodes[0].printers[0];
+    expect(p.state).toBe('ready');
+    expect(p.tool_map).toEqual([[0, 2], [1, 0]]);
+    expect(res.body.gcodes[0].tool_filaments).toHaveLength(2);
+  });
+
+  test('a printer missing a colour is wrong_filament and the reason names it', async () => {
+    const partId = seedPart(seedProject());
+    seedMultiGcode(partId);
+    seedU1([
+      { slot: 0, loaded: true, type: 'PLA', color: '#000000' },
+      { slot: 1, loaded: true, type: 'PLA', color: '#0000FF' },
+    ]);
+    const res = await request(app).get(`/api/parts/${partId}/dispatch-status`);
+    expect(res.body.dispatchable).toBe(false);
+    const p = res.body.gcodes[0].printers[0];
+    expect(p.state).toBe('wrong_filament');
+    expect(p.slot_reason).toMatch(/T1 PLA #FF0000/);
+    expect(res.body.gcodes[0].mismatch).toMatch(/filaments this file needs/);
   });
 });

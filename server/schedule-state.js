@@ -29,17 +29,19 @@ const crypto = require('crypto');
 
 // Bumped when the set of hashed inputs changes, so an old client's fingerprint can never
 // accidentally compare equal to a new server's.
-const FINGERPRINT_VERSION = 'v1';
+const FINGERPRINT_VERSION = 'v2';
 
 function fingerprint(db) {
   const h = crypto.createHash('sha1');
   h.update(FINGERPRINT_VERSION);
 
   for (const p of db.prepare(`
-    SELECT id, status, is_held, model, group_name, loaded_material, loaded_color
+    SELECT id, status, is_held, model, group_name, loaded_material, loaded_color, filament_slots
     FROM printers WHERE is_active = 1 ORDER BY id
   `).all()) {
-    h.update(`P${p.id}|${p.status}|${p.is_held}|${p.model}|${p.group_name || ''}|${p.loaded_material || ''}|${p.loaded_color || ''};`);
+    // filament_slots (not filament_slots_at, which changes every poll): a spool swap on a
+    // U1 changes which multi-colour parts it can take.
+    h.update(`P${p.id}|${p.status}|${p.is_held}|${p.model}|${p.group_name || ''}|${p.loaded_material || ''}|${p.loaded_color || ''}|${p.filament_slots || ''};`);
   }
 
   for (const pr of db.prepare(`
@@ -61,13 +63,13 @@ function fingerprint(db) {
   for (const g of db.prepare(`
     SELECT gcodes.id, gcodes.part_id, gcodes.printer_model, gcodes.parts_per_plate,
            gcodes.est_print_secs, gcodes.allowed_groups, gcodes.required_material,
-           gcodes.required_color
+           gcodes.required_color, gcodes.tool_filaments
     FROM gcodes
     JOIN parts    ON parts.id    = gcodes.part_id
     JOIN projects ON projects.id = parts.project_id
     WHERE projects.status = 'active' ORDER BY gcodes.id
   `).all()) {
-    h.update(`G${g.id}|${g.part_id}|${g.printer_model}|${g.parts_per_plate}|${g.est_print_secs ?? ''}|${g.allowed_groups || ''}|${g.required_material || ''}|${g.required_color || ''};`);
+    h.update(`G${g.id}|${g.part_id}|${g.printer_model}|${g.parts_per_plate}|${g.est_print_secs ?? ''}|${g.allowed_groups || ''}|${g.required_material || ''}|${g.required_color || ''}|${g.tool_filaments || ''};`);
   }
 
   // Only jobs the projection consumes. A finished job's effect on the schedule is already

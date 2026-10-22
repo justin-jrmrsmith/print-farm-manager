@@ -25,7 +25,7 @@ function makeDb() {
     CREATE TABLE printers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL, ip TEXT NOT NULL DEFAULT '', api_key TEXT NOT NULL DEFAULT '',
-      model TEXT NOT NULL DEFAULT 'mk4s', created_at INTEGER NOT NULL
+      model TEXT NOT NULL DEFAULT 'mk4s', created_at INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +44,7 @@ function makeDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       part_id INTEGER NOT NULL REFERENCES parts(id),
       printer_model TEXT NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL,
-      parts_per_plate INTEGER NOT NULL, created_at INTEGER NOT NULL
+      parts_per_plate INTEGER NOT NULL, created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

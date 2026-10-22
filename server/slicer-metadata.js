@@ -138,6 +138,55 @@ function parseGcodeComments(text) {
   return result;
 }
 
+// Per-tool filament, for multi-head printers that load a different filament on each
+// head (Snapmaker U1). Orca-family slicers write one list per setting in the config
+// block at the end of the file, indexed by logical tool (T0, T1, ...):
+//
+//   ; filament used [mm] = 1085.19, 484.34, 458.74
+//   ; filament used [g] = 3.24, 1.44, 1.37
+//   ; filament_colour = #0000FF;#80FFFF;#FFFFFF
+//   ; filament_type = PLA;PLA;PLA
+//
+// (src/libslic3r/GCode.cpp writes the usage lines; the config block is the full preset
+// dump. Verified against a Snapmaker Orca 2.4.0 U1 file.) A tool counts as used only
+// when the slicer reports filament consumed on it, which is also how the U1 firmware
+// decides which heads a print uses (print_task_config.py, extruders_used).
+//
+// Returns [{ tool, type, color, grams, mm }] for the used tools, ordered by tool, or null
+// when the file does not carry these lists (PrusaSlicer, single-material Bambu, older
+// slicers). null means "no per-tool requirement", never "no filament needed".
+function parseToolFilaments(text) {
+  if (typeof text !== 'string') return null;
+  const line = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+
+  const colours = line(/^;\s*filament_colour\s*=\s*([^\n]*)$/im);
+  const types   = line(/^;\s*filament_type\s*=\s*([^\n]*)$/im);
+  const grams   = line(/^;\s*filament used \[g\]\s*=\s*([^\n]*)$/im);
+  const mm      = line(/^;\s*filament used \[mm\]\s*=\s*([^\n]*)$/im);
+  if (!colours || !types || (!grams && !mm)) return null;
+
+  const colourList = colours.split(';').map(s => s.trim());
+  const typeList   = types.split(';').map(s => s.trim());
+  const nums = (raw) => (raw ? raw.split(',').map(s => parseFloat(s.trim())) : []);
+  const gramList = nums(grams);
+  const mmList   = nums(mm);
+
+  const out = [];
+  const count = Math.max(gramList.length, mmList.length);
+  for (let tool = 0; tool < count; tool++) {
+    const g = Number.isFinite(gramList[tool]) ? gramList[tool] : 0;
+    const l = Number.isFinite(mmList[tool]) ? mmList[tool] : 0;
+    if (g <= 0 && l <= 0) continue;
+    const color = (colourList[tool] || '').toUpperCase();
+    const type  = typeList[tool] || '';
+    // A used tool with no readable colour or type cannot be matched safely; refuse the
+    // whole list rather than quietly matching on fewer tools than the print uses.
+    if (!/^#[0-9A-F]{6}$/.test(color) || !type) return null;
+    out.push({ tool, type, color, grams: g, mm: l });
+  }
+  return out.length > 0 ? out : null;
+}
+
 // Read the head and tail of a file without loading the middle. Returns '' on any I/O
 // error: an unreadable file is handled by the caller's own validation, not here.
 function readEnds(filePath, bytes) {
@@ -164,7 +213,7 @@ function readEnds(filePath, bytes) {
 
 // Read whatever the sliced file knows about itself.
 //
-// Returns { est_print_secs, material_grams, source } where source is:
+// Returns { est_print_secs, material_grams, tool_filaments, source } where source is:
 //   '3mf'      values came from Metadata/slice_info.config
 //   'gcode'    values came from G-code comments
 //   'none'     nothing was parseable (unsupported container, or a slicer that wrote
@@ -181,26 +230,29 @@ function readSlicerMetadata(filePath, originalName = filePath) {
     } catch (_) {
       xmlBuf = null;
     }
-    if (!xmlBuf) return { est_print_secs: null, material_grams: null, source: 'none' };
+    if (!xmlBuf) return { est_print_secs: null, material_grams: null, tool_filaments: null, source: 'none' };
     const parsed = parseSliceInfoConfig(xmlBuf.toString('utf8'));
     const found = parsed.est_print_secs !== null || parsed.material_grams !== null;
-    return { ...parsed, source: found ? '3mf' : 'none' };
+    // .3mf goes to Bambu printers, whose AMS slot is chosen separately (gcodes.ams_slot).
+    return { ...parsed, tool_filaments: null, source: found ? '3mf' : 'none' };
   }
 
   if (ext === '.gcode' || ext === '.gco' || ext === '.g') {
-    const parsed = parseGcodeComments(readEnds(filePath, GCODE_SCAN_BYTES));
+    const text = readEnds(filePath, GCODE_SCAN_BYTES);
+    const parsed = parseGcodeComments(text);
     const found = parsed.est_print_secs !== null || parsed.material_grams !== null;
-    return { ...parsed, source: found ? 'gcode' : 'none' };
+    return { ...parsed, tool_filaments: parseToolFilaments(text), source: found ? 'gcode' : 'none' };
   }
 
   // .bgcode and anything else: not parseable here by design.
-  return { est_print_secs: null, material_grams: null, source: 'none' };
+  return { est_print_secs: null, material_grams: null, tool_filaments: null, source: 'none' };
 }
 
 module.exports = {
   readSlicerMetadata,
   parseSliceInfoConfig,
   parseGcodeComments,
+  parseToolFilaments,
   parseSlicerDuration,
   GCODE_SCAN_BYTES,
 };

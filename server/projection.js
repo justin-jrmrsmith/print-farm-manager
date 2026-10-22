@@ -35,6 +35,7 @@
 
 const { candidateSql, PROJECTION_COLUMNS } = require('./candidate-query');
 const { fingerprint } = require('./schedule-state');
+const slotMatch = require('./slot-match');
 
 // Block length used when neither the G-code nor the part carries an estimate. Blocks that
 // fall back to this are flagged time_unknown so the page can label them instead of
@@ -167,7 +168,7 @@ function projectSchedule(db, options = {}) {
 
   const printers = db.prepare(`
     SELECT id, name, model, group_name, status, is_held, job_time_remaining,
-           loaded_material, loaded_color
+           loaded_material, loaded_color, filament_slots, filament_slots_at
     FROM printers WHERE is_active = 1
     ORDER BY COALESCE(group_name, '') COLLATE NOCASE, name COLLATE NOCASE
   `).all();
@@ -276,6 +277,7 @@ function projectSchedule(db, options = {}) {
         group_name: printer.group_name,
         loaded_material: printer.loaded_material,
         loaded_color: printer.loaded_color,
+        filament_slots: printer.filament_slots,
         availableAt,
         seq: 0,
       });
@@ -297,6 +299,7 @@ function projectSchedule(db, options = {}) {
   // _reserveJob does when it hits a part's ceiling.
   const fullyPlanned = new Set();
   let truncated = false;
+  const slotTolerance = slotMatch.readTolerance(db);
 
   function tryAssign(lane) {
     const skip = [...fullyPlanned];
@@ -305,6 +308,14 @@ function projectSchedule(db, options = {}) {
         lane.model, lane.group_name, lane.loaded_material, lane.loaded_color, ...skip
       );
       if (!row) return null;
+
+      // Same slot rule as _reserveJob, minus the freshness check: the schedule assumes the
+      // spools loaded now stay loaded, which is the best forecast available.
+      const slotCheck = slotMatch.evaluate(row.tool_filaments, lane, { tolerance: slotTolerance });
+      if (slotCheck.applies && !slotCheck.ok) {
+        skip.push(row.part_id);
+        continue;
+      }
 
       const committed = plannedQty.get(row.part_id) || 0;
       const remaining = row.target_qty - row.completed_qty - committed;

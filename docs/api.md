@@ -443,6 +443,9 @@ Diagnostic for the "Why isn't this printing?" button on the Projects page. Mirro
 - `gcodes[]`: one entry per G-code, with the effective targeting after the gcode-overrides-project cascade (`allowed_groups` is a parsed array or `null`).
 - `gcodes[].printers[]`: every active printer of that model, ordered by name, including its `model`. `state` is checked in this order: `wrong_group`, `wrong_filament`, `held` (awaiting operator sign-off), `busy` (not IDLE, FINISHED, or STOPPED, or holding an `uploading`/`printing` job row), `ready`.
 - `gcodes[].mismatch`: when no printer matches this G-code's targeting at all, the same sentence that appears in `reasons`/`notes` for it; `null` otherwise. `GET /api/parts/queue` uses it as the no-match reason.
+- `gcodes[].tool_filaments`: for a multi-colour G-code, the filaments it was sliced for, `[{ "tool": 0, "type": "PLA", "color": "#000000", "grams": 3.24, "mm": 1085.19 }, ...]` (used tools only, `tool` 0-based); `null` for files without per-tool data.
+- `gcodes[].printers[].filament_slots`: for printers that report per-head filament (Snapmaker U1), the last reading, `[{ "slot": 0, "loaded": true, "type": "PLA", "color": "#E00000", "vendor": "Generic", "subtype": "Basic" }, ...]`; `null` otherwise.
+- `gcodes[].printers[].slot_reason` / `tool_map`: when slot matching applies (the G-code has `tool_filaments` and the printer has `filament_slots`), either why the loaded heads do not fit (`"no loaded slot matches T1 PLA #FF0000"`, `"filament slot reading is out of date"`; the printer's `state` is then `wrong_filament`) or the tool-to-head map dispatch would use, `[[tool, head], ...]` with both 0-based. Both `null` when slot matching does not apply.
 - `gcodes[].printers[].next_up`: for `ready` printers only, the part the scheduler would dispatch to that printer right now, computed with the scheduler's own candidate query (`server/candidate-query.js`) and ceiling skip; `null` otherwise. Read-only: no job row is written.
 
 Returns `404` if the part does not exist.
@@ -807,6 +810,7 @@ Body: `{ "value": "..." }`. Allowed keys:
 |---|---|---|
 | `dispatch_batch_size` | integer 1-100 | How many printers the scheduler keeps uploading or printing at once (a concurrency target, not a fixed group size; it draws deeper into the ready queue to fill the target if some printers have no dispatchable candidate) |
 | `farm_name` | ≤ 40 chars | Sidebar branding (falls back to "Print Farm") |
+| `filament_color_tolerance` | number 1-50 (default 15 when unset) | How far a loaded head's colour may be from a multi-colour G-code's colour (CIE76 delta E) and still match, for Snapmaker U1 slot matching. See [filaments.md](filaments.md#multi-head-printers-snapmaker-u1) |
 
 Returns `400` for unknown keys or failed validation.
 

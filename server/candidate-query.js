@@ -17,6 +17,11 @@
 // Keeping the lists separate means adding a column for one caller cannot widen the other's
 // query, which is what keeps this refactor behaviour-neutral for dispatch.
 //
+// Per-head filament slot matching (Snapmaker U1) is NOT expressible in SQL: it is an
+// assignment search done in server/slot-match.js. Both callers fetch gcodes.tool_filaments
+// here and run slotMatch.evaluate on each candidate, skipping a part that does not fit
+// the printer's loaded slots the same way they skip a part at its ceiling.
+//
 // GET /api/parts/:id/dispatch-status in routes/parts.js mirrors these same rules in JS to
 // explain them one part at a time, and GET /api/parts/queue reuses that mirror plus this
 // ORDER BY to list the whole queue; if the rules here change, both change with them.
@@ -59,7 +64,8 @@ const SCHEDULER_COLUMNS = `          parts.id          AS part_id,
           gcodes.filename,
           gcodes.filepath,
           gcodes.parts_per_plate,
-          gcodes.ams_slot`;
+          gcodes.ams_slot,
+          gcodes.tool_filaments`;
 
 // The projection additionally needs the two time estimates (to size a block) and the
 // display names (to label one).
@@ -73,6 +79,7 @@ const PROJECTION_COLUMNS = `          parts.id          AS part_id,
           gcodes.id         AS gcode_id,
           gcodes.filename,
           gcodes.parts_per_plate,
-          gcodes.est_print_secs`;
+          gcodes.est_print_secs,
+          gcodes.tool_filaments`;
 
 module.exports = { candidateSql, SCHEDULER_COLUMNS, PROJECTION_COLUMNS };

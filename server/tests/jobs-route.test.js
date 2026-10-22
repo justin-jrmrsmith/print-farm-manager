@@ -18,7 +18,7 @@ beforeAll(() => {
   db.exec(`
     CREATE TABLE printers (id INTEGER PRIMARY KEY, name TEXT, ip TEXT, api_key TEXT DEFAULT '',
       model TEXT, status TEXT DEFAULT 'UNKNOWN', is_held INTEGER DEFAULT 0,
-      is_active INTEGER DEFAULT 1, created_at INTEGER);
+      is_active INTEGER DEFAULT 1, created_at INTEGER, filament_slots TEXT, filament_slots_at INTEGER);
     CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, status TEXT DEFAULT 'draft',
       created_at INTEGER, updated_at INTEGER);
     CREATE TABLE parts (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT,

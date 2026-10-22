@@ -43,6 +43,8 @@ setInterval (15s)
                                                             dispatch_batch_size)
 ```
 
+When a driver's status result includes `filamentSlots` (per-head filament, Snapmaker U1 only), the poller writes it to `printers.filament_slots` with `filament_slots_at = Date.now()` on every poll, whether or not the status changed. A result without it leaves the stored reading alone. See [filaments.md](filaments.md#multi-head-printers-snapmaker-u1).
+
 `Promise.allSettled()` is used (not `Promise.all()`) so a rejection from one printer never blocks or kills the loop for others. Each printer's failure is isolated.
 
 ## Interval

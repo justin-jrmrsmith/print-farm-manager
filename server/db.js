@@ -108,6 +108,13 @@ try { db.exec('ALTER TABLE gcodes ADD COLUMN required_color TEXT'); } catch (_) 
 try { db.exec('ALTER TABLE projects ADD COLUMN required_material TEXT'); } catch (_) {}
 try { db.exec('ALTER TABLE projects ADD COLUMN required_color TEXT'); } catch (_) {}
 try { db.exec('ALTER TABLE projects ADD COLUMN allowed_groups TEXT'); } catch (_) {}
+// Multi-head filament slots (Snapmaker U1), see server/slot-match.js.
+// gcodes.tool_filaments: JSON [{ tool, type, color, grams, mm }] read from the file at upload.
+// printers.filament_slots: JSON [{ slot, loaded, type, color, vendor, subtype }] from the
+// last successful poll, with filament_slots_at (ms) so dispatch can refuse a stale reading.
+try { db.exec('ALTER TABLE gcodes ADD COLUMN tool_filaments TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE printers ADD COLUMN filament_slots TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE printers ADD COLUMN filament_slots_at INTEGER'); } catch (_) {}
 
 // Printer models — source of truth for which models this farm supports.
 // New installs start empty; operator adds models in Settings.

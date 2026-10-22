@@ -17,13 +17,13 @@ beforeAll(() => {
     CREATE TABLE printers (
       id         INTEGER PRIMARY KEY,
       group_name TEXT,
-      is_active  INTEGER NOT NULL DEFAULT 1
+      is_active  INTEGER NOT NULL DEFAULT 1, filament_slots TEXT, filament_slots_at INTEGER
     )
   `);
   db.exec(`
     CREATE TABLE gcodes (
       id             INTEGER PRIMARY KEY,
-      allowed_groups TEXT
+      allowed_groups TEXT, tool_filaments TEXT
     )
   `);
   db.exec(`

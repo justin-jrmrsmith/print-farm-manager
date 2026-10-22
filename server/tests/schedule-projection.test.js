@@ -37,7 +37,7 @@ beforeEach(() => {
       group_name TEXT, type TEXT DEFAULT 'prusa', model TEXT NOT NULL,
       status TEXT DEFAULT 'IDLE', is_held INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
       job_time_remaining INTEGER, loaded_material TEXT, loaded_color TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +59,7 @@ beforeEach(() => {
       printer_model TEXT NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL,
       parts_per_plate INTEGER NOT NULL, est_print_secs INTEGER, material_grams REAL,
       ams_slot INTEGER, allowed_groups TEXT, required_material TEXT, required_color TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -567,5 +567,39 @@ describe('the projection is read-only', () => {
       .toEqual(before.parts);
     expect(db.prepare('SELECT status, is_held FROM printers WHERE id = ?').get(printerId))
       .toEqual(before.printers);
+  });
+});
+
+// Multi-colour files only land on U1 lanes whose heads hold the filaments, the same rule
+// the scheduler applies (server/slot-match.js), so the schedule cannot promise a print the
+// farm will refuse to dispatch.
+describe('multi-head filament slots', () => {
+  const TOOLS = JSON.stringify([
+    { tool: 0, type: 'PLA', color: '#000000', grams: 3, mm: 1000 },
+    { tool: 1, type: 'PLA', color: '#FF0000', grams: 1, mm: 300 },
+  ]);
+  function setSlots(printerId, slots) {
+    db.prepare('UPDATE printers SET filament_slots = ?, filament_slots_at = 1 WHERE id = ?')
+      .run(JSON.stringify(slots), printerId);
+  }
+
+  test('a U1 holding both colours gets the block; one missing a colour does not', () => {
+    const fits = addPrinter({ name: 'U1-A', model: 'u1' });
+    const missing = addPrinter({ name: 'U1-B', model: 'u1' });
+    setSlots(fits, [
+      { slot: 0, loaded: true, type: 'PLA', color: '#FF0000' },
+      { slot: 1, loaded: true, type: 'PLA', color: '#000000' },
+    ]);
+    setSlots(missing, [
+      { slot: 0, loaded: true, type: 'PLA', color: '#000000' },
+      { slot: 1, loaded: true, type: 'PLA', color: '#FFFFFF' },
+    ]);
+    const partId = addPart(addProject(), { target_qty: 5 });
+    const gcodeId = addGcode(partId, { printer_model: 'u1' });
+    db.prepare('UPDATE gcodes SET tool_filaments = ? WHERE id = ?').run(TOOLS, gcodeId);
+
+    const blocks = project().blocks.filter(b => b.kind === 'projected');
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks.every(b => b.printer_id === fits)).toBe(true);
   });
 });

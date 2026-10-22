@@ -33,7 +33,7 @@ beforeEach(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       part_id INTEGER NOT NULL REFERENCES parts(id),
       printer_model TEXT NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL,
-      parts_per_plate INTEGER NOT NULL, est_print_secs INTEGER, created_at INTEGER NOT NULL
+      parts_per_plate INTEGER NOT NULL, est_print_secs INTEGER, created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

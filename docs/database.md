@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS printers (
 );
 ```
 
+Later additive columns not shown above include `filament_slots` (TEXT, JSON) and `filament_slots_at` (INTEGER, epoch ms): the per-head filament a Snapmaker U1 reports, `[{ slot, loaded, type, color, vendor, subtype }]`, stored by the poller on every successful reading. A poll without a reading leaves the last one in place; dispatch refuses a reading older than `SLOT_DATA_MAX_AGE_MS` (60 s, `server/slot-match.js`).
+
 The `job_name`, `job_progress`, and `job_time_remaining` columns are written on every poll cycle while `status = 'PRINTING'` and cleared to NULL the moment the printer leaves that state. `job_name` is sourced from our own `jobs`/`gcodes` tables (PrusaLink does not return a filename in its status response).
 
 **Model resolution:** The `model` column in the CSV is the preferred source. Accepted values (case-insensitive): `MK4`, `MK4S`, `C1`, `C1L`, `XL`. These are normalized to lowercase as the internal ID.
@@ -135,9 +137,12 @@ CREATE TABLE IF NOT EXISTS gcodes (
   allowed_groups     TEXT,               -- nullable JSON array e.g. '["Rack A","Rack B"]'; NULL = no restriction
   required_material  TEXT,               -- nullable; overrides the project default below when set
   required_color     TEXT,               -- nullable; overrides the project default below when set
+  tool_filaments     TEXT,               -- nullable JSON; per-tool filament read from the file at upload (multi-colour Orca files)
   created_at         INTEGER NOT NULL
 );
 ```
+
+**`tool_filaments`** is `[{ tool, type, color, grams, mm }]` for each tool the slicer reports filament used on (`tool` is the 0-based logical tool, `color` is `#RRGGBB`), read from the Orca-family config block at upload. It is `NULL` for files without those lists. Only printers that report `printers.filament_slots` act on it; see [filaments.md](filaments.md#multi-head-printers-snapmaker-u1).
 
 **Uniqueness on `(part_id, printer_model)`** is enforced at the application layer, not as a DB constraint, so the error message shown to the operator is clear and specific.
 

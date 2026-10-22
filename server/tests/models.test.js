@@ -18,7 +18,7 @@ beforeAll(() => {
     CREATE TABLE printers (
       id        INTEGER PRIMARY KEY,
       model     TEXT NOT NULL,
-      is_active INTEGER NOT NULL DEFAULT 1
+      is_active INTEGER NOT NULL DEFAULT 1, filament_slots TEXT, filament_slots_at INTEGER
     )
   `);
 

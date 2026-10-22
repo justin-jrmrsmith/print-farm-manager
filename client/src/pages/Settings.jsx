@@ -269,6 +269,11 @@ export default function Settings() {
   const [batchSize, setBatchSize] = useState('');
   const [batchSizeError, setBatchSizeError] = useState(null);
 
+  // Colour tolerance for multi-head filament slot matching (server/slot-match.js).
+  // Empty means "not set", and the server default (15) applies.
+  const [colorTolerance, setColorTolerance] = useState('');
+  const [colorToleranceError, setColorToleranceError] = useState(null);
+
   // Farm name — shown in the sidebar; picked up on next page load
   const [farmName, setFarmName] = useState('');
   const [farmNameError, setFarmNameError] = useState(null);
@@ -279,6 +284,7 @@ export default function Settings() {
       .then(data => {
         if (data.dispatch_batch_size) setBatchSize(data.dispatch_batch_size);
         if (data.farm_name) setFarmName(data.farm_name);
+        if (data.filament_color_tolerance) setColorTolerance(data.filament_color_tolerance);
       })
       .catch(() => {});
   }, []);
@@ -296,6 +302,22 @@ export default function Settings() {
       showToast('Saved');
     } catch (err) {
       setBatchSizeError(err.message);
+    }
+  }
+
+  async function handleSaveColorTolerance() {
+    setColorToleranceError(null);
+    try {
+      const res = await fetch('/api/settings/filament_color_tolerance', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: colorTolerance }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      showToast('Saved');
+    } catch (err) {
+      setColorToleranceError(err.message);
     }
   }
 
@@ -376,6 +398,7 @@ export default function Settings() {
         .then(r => r.json())
         .then(settingsData => {
           if (settingsData.dispatch_batch_size) setBatchSize(settingsData.dispatch_batch_size);
+          setColorTolerance(settingsData.filament_color_tolerance || '');
           setFarmName(settingsData.farm_name || '');
           window.dispatchEvent(new CustomEvent('farmNameChanged', { detail: settingsData.farm_name || 'Print Farm' }));
         })
@@ -1164,6 +1187,49 @@ export default function Settings() {
         </div>
         {batchSizeError && (
           <div style={{ marginTop: 10, color: '#fca5a5', fontSize: 13 }}>{batchSizeError}</div>
+        )}
+
+        <p style={{ color: '#64748b', fontSize: 13, margin: '20px 0 16px' }}>
+          Multi-colour files on multi-head printers (Snapmaker U1) only go to a printer whose
+          loaded heads match every filament in the file, in any order. This is how far a
+          head's colour may be from the slicer's colour and still count as a match. 15 (the
+          default) treats near-blacks as black but keeps blue and navy apart; raise it if
+          matching spools are being refused, lower it if similar colours are being swapped.
+        </p>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>
+              Filament colour tolerance (1-50)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              placeholder="15"
+              value={colorTolerance}
+              onChange={e => setColorTolerance(e.target.value)}
+              style={{ ...inputStyle, width: 80 }}
+            />
+          </div>
+          <button
+            onClick={handleSaveColorTolerance}
+            style={{
+              background: '#2563eb',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              padding: '8px 18px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              alignSelf: 'flex-end',
+            }}
+          >
+            Save
+          </button>
+        </div>
+        {colorToleranceError && (
+          <div style={{ marginTop: 10, color: '#fca5a5', fontSize: 13 }}>{colorToleranceError}</div>
         )}
       </section>
 

@@ -67,6 +67,16 @@ class PrinterPoller extends EventEmitter {
     jobProgress = result.progress;
     jobTimeRemaining = result.timeRemaining;
 
+    // Per-head filament (Snapmaker U1). Written on every successful reading so
+    // filament_slots_at shows how fresh it is; a poll without a reading (offline,
+    // other brands) leaves the last one alone, and dispatch refuses it once it is stale
+    // (SLOT_DATA_MAX_AGE_MS in server/slot-match.js).
+    if (Array.isArray(result.filamentSlots)) {
+      this.db
+        .prepare('UPDATE printers SET filament_slots = ?, filament_slots_at = ? WHERE id = ?')
+        .run(JSON.stringify(result.filamentSlots), Date.now(), printer.id);
+    }
+
     if (newStatus !== previousStatus) {
       // Only hold when there is a tracked active job to protect. This gates all three
       // hold triggers — FINISHED, missed-finish (PRINTING→IDLE), and non-safe states

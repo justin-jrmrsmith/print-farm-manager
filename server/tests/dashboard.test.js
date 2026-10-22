@@ -38,7 +38,7 @@ beforeAll(() => {
       parts_per_plate INTEGER NOT NULL,
       est_print_secs INTEGER,
       material_grams REAL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE printers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +49,7 @@ beforeAll(() => {
       status TEXT DEFAULT 'UNKNOWN',
       is_held INTEGER DEFAULT 1,
       is_active INTEGER DEFAULT 1,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

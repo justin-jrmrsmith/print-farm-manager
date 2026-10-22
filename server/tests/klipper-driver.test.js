@@ -183,6 +183,93 @@ describe('uploadAndPrint', () => {
   });
 });
 
+// ─── Snapmaker U1 filament slots and mapped start ──────────────────────────────
+
+describe('U1 filament slots', () => {
+  // print_task_config shape from Snapmaker u1-klipper print_task_config.py.
+  const ptc = {
+    filament_exist:       [true, false, true, true],
+    filament_type:        ['PLA', 'NONE', 'PLA', 'PETG'],
+    filament_vendor:      ['Generic', 'NONE', 'Snapmaker', 'Generic'],
+    filament_sub_type:    ['Basic', 'NONE', 'Matte', 'NONE'],
+    filament_color_rgba:  ['FF0000FF', 'FFFFFFFF', '161616FF', '000000FF'],
+    filament_color_multi: [{}, {}, { nums: 2, colors: ['00FF00', '0000FF'] }, {}],
+  };
+
+  test('getStatus queries print_task_config and returns per-head filament', async () => {
+    const res = moonrakerResponse('standby');
+    res.data.result.status.print_task_config = ptc;
+    axios.get.mockResolvedValueOnce(res);
+
+    const result = await klipper.getStatus(fakePrinter);
+    expect(axios.get.mock.calls[0][1].params.print_task_config).toMatch(/filament_type/);
+    expect(result.filamentSlots).toEqual([
+      { slot: 0, loaded: true,  type: 'PLA',  color: '#FF0000', vendor: 'Generic',   subtype: 'Basic' },
+      { slot: 1, loaded: false, type: null,   color: '#FFFFFF', vendor: null,        subtype: null },
+      // a multi-colour spool reads as its first colour
+      { slot: 2, loaded: true,  type: 'PLA',  color: '#00FF00', vendor: 'Snapmaker', subtype: 'Matte' },
+      { slot: 3, loaded: true,  type: 'PETG', color: '#000000', vendor: 'Generic',   subtype: null },
+    ]);
+  });
+
+  test('printers without print_task_config report no slots', async () => {
+    axios.get.mockResolvedValueOnce(moonrakerResponse('standby'));
+    const result = await klipper.getStatus(fakePrinter);
+    expect(result.filamentSlots).toBeUndefined();
+  });
+
+  test('a mapped print uploads without print=true, then starts with MAP_TABLE', async () => {
+    const filename = `klipper_mapped_${Date.now()}.gcode`;
+    const fullPath = createTestFile(filename);
+    axios.post
+      .mockResolvedValueOnce({ data: { item: { path: filename, root: 'gcodes' } } })
+      .mockResolvedValueOnce({ data: { result: 'ok' } });
+    const FormData = require('form-data');
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+    await klipper.uploadAndPrint(fakePrinter, fullPath, filename, {
+      toolMap: [[0, 2], [1, 0]],
+      toolFilaments: [
+        { tool: 0, type: 'PLA', color: '#000000', grams: 3.24, mm: 1085.19 },
+        { tool: 1, type: 'PLA', color: '#FF0000', grams: 1.44, mm: 484.34 },
+      ],
+    });
+
+    const fields = appendSpy.mock.calls.map(([name, value]) => ({ name, value }));
+    expect(fields).toContainEqual({ name: 'print', value: 'false' });
+    appendSpy.mockRestore();
+
+    const [url, body] = axios.post.mock.calls[1];
+    expect(url).toBe('http://192.168.1.250:7125/printer/gcode/script');
+    expect(body.script).toBe(
+      `SDCARD_PRINT_FILE_WITH_PARAMETERS FILENAME="${filename}" MAP_TABLE="[[0,2],[1,0]]" ` +
+      'FILAMENT_USED_G="[3.24,1.44]" FILAMENT_USED_MM="[1085.19,484.34]"'
+    );
+  });
+
+  test('usage lists keep zeros for unused tools so indices line up', () => {
+    const script = klipper.buildMappedStartScript('a.gcode', [[0, 1], [2, 3]], [
+      { tool: 0, grams: 1, mm: 10 }, { tool: 2, grams: 2, mm: 20 },
+    ]);
+    expect(script).toContain('FILAMENT_USED_G="[1,0,2]"');
+    expect(script).toContain('MAP_TABLE="[[0,1],[2,3]]"');
+  });
+
+  test('a filename Klipper cannot quote is uploaded under a safe name', async () => {
+    const fullPath = createTestFile(`klipper_quote_${Date.now()}.gcode`);
+    axios.post.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+    await klipper.uploadAndPrint(fakePrinter, fullPath, 'cube "v2"; final.gcode', { toolMap: [[0, 0]] });
+    expect(axios.post.mock.calls[1][1].script).toContain('FILENAME="cube _v2__ final.gcode"');
+  });
+
+  test('a failed start is reported so the scheduler retries or holds', async () => {
+    const fullPath = createTestFile(`klipper_startfail_${Date.now()}.gcode`);
+    axios.post.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('Request failed with status code 400'));
+    await expect(klipper.uploadAndPrint(fakePrinter, fullPath, 'x.gcode', { toolMap: [[0, 1]] }))
+      .rejects.toThrow('400');
+  });
+});
+
 // ─── checkIfPrinting ─────────────────────────────────────────────────────────
 
 describe('checkIfPrinting', () => {

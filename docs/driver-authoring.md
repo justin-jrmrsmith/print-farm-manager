@@ -82,6 +82,7 @@ Returns `{ status, progress, timeRemaining, currentFile }`.
 - `progress`: 0 to 100 while `PRINTING`, otherwise `null`.
 - `timeRemaining`: seconds while `PRINTING`, otherwise `null`.
 - `currentFile`: display name of the file being printed, or `null`. If `null`, the poller falls back to a DB join through the jobs table, so only populate it if your protocol reports it directly.
+- `filamentSlots` (optional): for multi-head printers that report what each head is loaded with, `[{ slot, loaded, type, color, vendor, subtype }]` with `slot` 0-based and `color` as `#RRGGBB`. The poller stores it in `printers.filament_slots`, and the scheduler then only sends a multi-colour G-code to the printer when every tool fits a loaded head (`server/slot-match.js`). Omit the key when you have no reading; do not return an empty array to mean "unknown". Only `klipper.js` (Snapmaker U1) sets it today.
 
 Rules:
 
@@ -96,6 +97,7 @@ Uploads a file and starts printing it, in whatever way your protocol requires (o
 - `gcodeFullPath` is a resolved absolute path that already exists on disk. Read it with a stream for large files.
 - `filename` is the bare name to use on the printer (`part.gcode`).
 - `options.amsSlot` is a material-slot index for printers with a multi-material unit (`-1` or `null` means default/external spool). Ignore it if your hardware has no equivalent.
+- `options.toolMap` is set only when the printer reported `filamentSlots` and the G-code is multi-colour: `[[tool, head], ...]`, both 0-based, saying which physical head each of the file's tools must print on. `options.toolFilaments` carries the file's per-tool usage alongside it. A driver that sets `filamentSlots` must apply the map (or throw); others never receive one.
 - **Resolve only when the print is confirmed started.** The scheduler marks the job `printing` the moment your promise resolves. Resolving after a successful upload but before the print command is acknowledged will mark jobs as printing that never started.
 - **Throw on failure.** The scheduler retries: 3 attempts total, 5 seconds apart.
 - **Throw `UPLOAD_CONFLICT` for transfer-in-progress conflicts.** If your protocol can reject an upload because a previous transfer is still running (typically a prior attempt that timed out on our side but continued on the printer), throw an error with `code: 'UPLOAD_CONFLICT'`:

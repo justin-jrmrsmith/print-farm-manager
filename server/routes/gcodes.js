@@ -183,6 +183,10 @@ module.exports = (db, scheduler = null) => {
       console.log(`[gcodes] Read estimates from ${fileMeta.source} for "${req.file.originalname}": ` +
         `${fileMeta.est_print_secs ?? 'no'} secs, ${fileMeta.material_grams ?? 'no'} grams`);
     }
+    if (fileMeta.tool_filaments) {
+      console.log(`[gcodes] "${req.file.originalname}" uses ` +
+        fileMeta.tool_filaments.map(t => `T${t.tool} ${t.type} ${t.color}`).join(', '));
+    }
 
     // allowed_groups: JSON array string e.g. '["MK4S Farm","XL Farm"]', or null = all groups
     const parsedAllowedGroups = allowed_groups && allowed_groups !== '' ? allowed_groups : null;
@@ -190,8 +194,8 @@ module.exports = (db, scheduler = null) => {
     const parsedRequiredColor    = required_color    && required_color    !== '' ? required_color.trim()    : null;
 
     const gcode = db.prepare(`
-      INSERT INTO gcodes (part_id, printer_model, filename, filepath, parts_per_plate, est_print_secs, material_grams, ams_slot, allowed_groups, required_material, required_color, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO gcodes (part_id, printer_model, filename, filepath, parts_per_plate, est_print_secs, material_grams, ams_slot, allowed_groups, required_material, required_color, tool_filaments, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       part_id,
       printer_model,
@@ -204,6 +208,9 @@ module.exports = (db, scheduler = null) => {
       parsedAllowedGroups,
       parsedRequiredMaterial,
       parsedRequiredColor,
+      // Per-tool filament the file was sliced for. Only multi-head printers that report
+      // their slots act on it (server/slot-match.js); everywhere else it is inert.
+      fileMeta.tool_filaments ? JSON.stringify(fileMeta.tool_filaments) : null,
       Date.now()
     );
 

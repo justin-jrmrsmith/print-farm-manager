@@ -28,7 +28,7 @@ beforeAll(() => {
       decommissioned_at INTEGER,
       decommission_note TEXT,
       serial_number    TEXT DEFAULT '',
-      created_at       INTEGER NOT NULL
+      created_at       INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +58,7 @@ beforeAll(() => {
       filepath        TEXT NOT NULL,
       parts_per_plate INTEGER NOT NULL,
       est_print_secs  INTEGER,
-      created_at      INTEGER NOT NULL
+      created_at      INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,

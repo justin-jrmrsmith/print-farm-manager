@@ -25,7 +25,7 @@ beforeEach(() => {
       type TEXT DEFAULT 'prusa', model TEXT NOT NULL,
       status TEXT DEFAULT 'IDLE', is_held INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
       job_name TEXT, job_progress REAL, job_time_remaining INTEGER,
-      loaded_material TEXT, loaded_color TEXT, created_at INTEGER NOT NULL
+      loaded_material TEXT, loaded_color TEXT, created_at INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
     );
     CREATE TABLE projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +46,7 @@ beforeEach(() => {
       printer_model TEXT NOT NULL, filename TEXT NOT NULL, filepath TEXT NOT NULL,
       parts_per_plate INTEGER NOT NULL, est_print_secs INTEGER, material_grams REAL,
       ams_slot INTEGER, allowed_groups TEXT, required_material TEXT, required_color TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

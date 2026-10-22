@@ -500,7 +500,7 @@ describe('_sweepInBatches: ceiling interaction through the real wave loop', () =
         model TEXT NOT NULL, type TEXT DEFAULT 'prusa',
         group_name TEXT, loaded_material TEXT, loaded_color TEXT,
         status TEXT DEFAULT 'IDLE', is_held INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL, filament_slots TEXT, filament_slots_at INTEGER
       );
       CREATE TABLE projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -523,7 +523,7 @@ describe('_sweepInBatches: ceiling interaction through the real wave loop', () =
         filename TEXT NOT NULL, filepath TEXT NOT NULL,
         parts_per_plate INTEGER NOT NULL, ams_slot INTEGER,
         allowed_groups TEXT, required_material TEXT, required_color TEXT,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL, tool_filaments TEXT
       );
       CREATE TABLE jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

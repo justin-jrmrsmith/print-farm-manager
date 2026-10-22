@@ -56,7 +56,7 @@ beforeAll(() => {
     CREATE TABLE gcodes (id INTEGER PRIMARY KEY, part_id INTEGER, printer_model TEXT,
       filename TEXT, filepath TEXT, parts_per_plate INTEGER, est_print_secs INTEGER,
       material_grams REAL, ams_slot INTEGER, allowed_groups TEXT,
-      required_material TEXT, required_color TEXT, created_at INTEGER);
+      required_material TEXT, required_color TEXT, created_at INTEGER, tool_filaments TEXT);
     CREATE TABLE jobs (id INTEGER PRIMARY KEY, part_id INTEGER, printer_id INTEGER,
       gcode_id INTEGER, parts_per_plate INTEGER, status TEXT DEFAULT 'queued',
       started_at INTEGER, finished_at INTEGER, created_at INTEGER);

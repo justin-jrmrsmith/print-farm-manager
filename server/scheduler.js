@@ -6,6 +6,7 @@ const { candidateSql, SCHEDULER_COLUMNS } = require('./candidate-query');
 const notifications = require('./notifications');
 const events = require('./events');
 const partLedger = require('./partLedger');
+const slotMatch = require('./slot-match');
 
 const GCODE_DIR = path.join(__dirname, 'gcode');
 
@@ -312,6 +313,13 @@ class JobScheduler extends EventEmitter {
     let candidate = null;
     let jobId = null;
     let gcodeFullPath = null;
+    let toolMap = null;
+
+    // Per-head filament for multi-head printers (Snapmaker U1). Re-read here rather than
+    // trusting the passed row: a printerIdle event carries the row from before the poll
+    // that just stored a fresh reading.
+    const slotRow = this.db.prepare('SELECT filament_slots, filament_slots_at FROM printers WHERE id = ?').get(printer.id) || {};
+    const slotTolerance = slotMatch.readTolerance(this.db);
 
     while (true) {
       // Eligibility rules and priority ordering live in server/candidate-query.js so the
@@ -323,6 +331,18 @@ class JobScheduler extends EventEmitter {
         console.log(`[scheduler] No candidate found for ${printer.name} (model: ${printer.model}) — no open parts with matching G-code in an active project`);
         return null;
       }
+
+      // Slot check, before any job row exists. A multi-colour file only goes to a printer
+      // whose heads hold every filament it needs; the result is the tool-to-head map the
+      // driver hands the firmware at print start. Files or printers without per-tool data
+      // are unaffected (applies: false).
+      const slotCheck = slotMatch.evaluate(candidate.tool_filaments, slotRow, { now: Date.now(), tolerance: slotTolerance });
+      if (slotCheck.applies && !slotCheck.ok) {
+        console.log(`[scheduler] ${printer.name} cannot print part ${candidate.part_id} ("${candidate.filename}"): ${slotCheck.reason}. Trying next part`);
+        skippedPartIds.push(candidate.part_id);
+        continue;
+      }
+      toolMap = slotCheck.applies ? slotCheck.map : null;
 
       // Synchronously insert a job as 'uploading' — this acts as a dispatch lock
       // so concurrent printerIdle events for printers of the same model don't
@@ -380,13 +400,17 @@ class JobScheduler extends EventEmitter {
       break;
     }
 
-    return { jobId, candidate, driver, gcodeFullPath };
+    if (toolMap) {
+      console.log(`[scheduler] ${printer.name} tool map for "${candidate.filename}": ` +
+        toolMap.map(([t, s]) => `T${t}->head ${s + 1}`).join(', '));
+    }
+    return { jobId, candidate, driver, gcodeFullPath, toolMap };
   }
 
   // Perform the actual upload for an already-reserved job (see _reserveJob). This is
   // the only async part of dispatch: real network I/O to the printer.
   async _executeUpload(printer, reservation) {
-    const { jobId, candidate, driver, gcodeFullPath } = reservation;
+    const { jobId, candidate, driver, gcodeFullPath, toolMap } = reservation;
 
     // Upload with retries. A transient network timeout (common when many printers
     // start simultaneously) will self-heal. Only after all attempts are exhausted
@@ -402,7 +426,12 @@ class JobScheduler extends EventEmitter {
     try {
       for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
         try {
-          await driver.uploadAndPrint(printer, gcodeFullPath, candidate.filename, { amsSlot: candidate.ams_slot });
+          await driver.uploadAndPrint(printer, gcodeFullPath, candidate.filename, {
+            amsSlot: candidate.ams_slot,
+            // Only set for multi-head slot matches; drivers that do not know it ignore it.
+            toolMap: toolMap || null,
+            toolFilaments: toolMap ? JSON.parse(candidate.tool_filaments) : null,
+          });
           lastErr = null;
           break;
         } catch (err) {

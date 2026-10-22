@@ -16,6 +16,7 @@ const {
   readSlicerMetadata,
   parseSliceInfoConfig,
   parseGcodeComments,
+  parseToolFilaments,
   parseSlicerDuration,
 } = require('../slicer-metadata');
 const { buildZip, buildSliceInfoConfig } = require('./helpers/build-zip');
@@ -209,6 +210,7 @@ describe('readSlicerMetadata', () => {
     expect(readSlicerMetadata(file, 'sliced.3mf')).toEqual({
       est_print_secs: 7380,
       material_grams: 52.5,
+      tool_filaments: null,
       source: '3mf',
     });
   });
@@ -216,7 +218,7 @@ describe('readSlicerMetadata', () => {
   test('a .3mf with no slice_info reports nothing found', () => {
     const file = writeTemp('bare.3mf', buildZip({ '3D/3dmodel.model': '<model/>' }));
     expect(readSlicerMetadata(file, 'bare.3mf')).toEqual({
-      est_print_secs: null, material_grams: null, source: 'none',
+      est_print_secs: null, material_grams: null, tool_filaments: null, source: 'none',
     });
   });
 
@@ -224,7 +226,7 @@ describe('readSlicerMetadata', () => {
     const file = writeTemp('part.gcode',
       'G28\nG1 X0\n; total filament used [g] = 21.0\n; estimated printing time (normal mode) = 2h 30m 0s\n');
     expect(readSlicerMetadata(file, 'part.gcode')).toEqual({
-      est_print_secs: 9000, material_grams: 21.0, source: 'gcode',
+      est_print_secs: 9000, material_grams: 21.0, tool_filaments: null, source: 'gcode',
     });
   });
 
@@ -247,14 +249,59 @@ describe('readSlicerMetadata', () => {
   test('.bgcode is left to the filename parser rather than guessed at', () => {
     const file = writeTemp('part.bgcode', Buffer.from([0x47, 0x43, 0x44, 0x45, 0x01, 0x02]));
     expect(readSlicerMetadata(file, 'part.bgcode')).toEqual({
-      est_print_secs: null, material_grams: null, source: 'none',
+      est_print_secs: null, material_grams: null, tool_filaments: null, source: 'none',
     });
   });
 
   test('a missing file reports nothing found instead of throwing', () => {
     expect(readSlicerMetadata(path.join(os.tmpdir(), 'does-not-exist.3mf'), 'x.3mf'))
-      .toEqual({ est_print_secs: null, material_grams: null, source: 'none' });
+      .toEqual({ est_print_secs: null, material_grams: null, tool_filaments: null, source: 'none' });
     expect(readSlicerMetadata(path.join(os.tmpdir(), 'does-not-exist.gcode'), 'x.gcode'))
-      .toEqual({ est_print_secs: null, material_grams: null, source: 'none' });
+      .toEqual({ est_print_secs: null, material_grams: null, tool_filaments: null, source: 'none' });
+  });
+});
+
+// Per-tool filament for multi-head printers (Snapmaker U1). Lines copied from a real
+// Snapmaker Orca 2.4.0 three-colour U1 file.
+describe('parseToolFilaments', () => {
+  const U1_FOOTER = [
+    '; filament used [mm] = 1085.19, 484.34, 458.74',
+    '; filament used [cm3] = 2.61, 1.16, 1.10',
+    '; filament used [g] = 3.24, 1.44, 1.37',
+    '; total filament used [g] = 6.05',
+    '; CONFIG_BLOCK_START',
+    '; extruder_colour = #0000FF;#80FFFF;#FFFFFF',
+    '; filament_colour = #0000FF;#80FFFF;#FFFFFF',
+    '; filament_colour_mode = 0,0,0',
+    '; filament_type = PLA;PLA;PLA',
+    '; CONFIG_BLOCK_END',
+  ].join('\n');
+
+  test('reads type, colour and usage for every tool', () => {
+    expect(parseToolFilaments(U1_FOOTER)).toEqual([
+      { tool: 0, type: 'PLA', color: '#0000FF', grams: 3.24, mm: 1085.19 },
+      { tool: 1, type: 'PLA', color: '#80FFFF', grams: 1.44, mm: 484.34 },
+      { tool: 2, type: 'PLA', color: '#FFFFFF', grams: 1.37, mm: 458.74 },
+    ]);
+  });
+
+  test('tools the slicer reports no filament for are left out', () => {
+    const text = U1_FOOTER
+      .replace('3.24, 1.44, 1.37', '3.24, 0.00, 1.37')
+      .replace('1085.19, 484.34, 458.74', '1085.19, 0.00, 458.74');
+    expect(parseToolFilaments(text).map(t => t.tool)).toEqual([0, 2]);
+  });
+
+  test('a used tool with an unreadable colour voids the whole list', () => {
+    expect(parseToolFilaments(U1_FOOTER.replace('filament_colour = #0000FF;#80FFFF;', 'filament_colour = #0000FF;blue;'))).toBeNull();
+  });
+
+  test('files without the lists (PrusaSlicer, single material) give null', () => {
+    expect(parseToolFilaments('; total filament used [g] = 21.0\n')).toBeNull();
+  });
+
+  test('readSlicerMetadata returns the list for a .gcode', () => {
+    const file = writeTemp('u1.gcode', 'G28\n' + U1_FOOTER + '\n');
+    expect(readSlicerMetadata(file, 'u1.gcode').tool_filaments).toHaveLength(3);
   });
 });

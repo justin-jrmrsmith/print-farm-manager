@@ -7,6 +7,7 @@ const router  = express.Router();
 const { normalizePrintTime } = require('../estimate-input');
 const { candidateSql, PROJECTION_COLUMNS } = require('../candidate-query');
 const { fingerprint } = require('../schedule-state');
+const slotMatch = require('../slot-match');
 
 const GCODE_DIR = path.join(__dirname, '..', 'gcode');
 
@@ -48,6 +49,12 @@ module.exports = (db, scheduler = null) => {
     projects.allowed_groups    AS project_allowed_groups
   `;
 
+  // JSON columns (gcodes.tool_filaments, printers.filament_slots) to arrays for the client.
+  function parseSlots(raw) {
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (_) { return null; }
+  }
+
   const NO_GCODE_REASON = 'No G-code uploaded: upload one per printer model this part can print on';
 
   // Printer states that count as a match for the queue: the printer can run this part's
@@ -69,13 +76,16 @@ module.exports = (db, scheduler = null) => {
   // (server/candidate-query.js, so this cannot drift from dispatch), skipping parts whose
   // in-progress jobs already cover the remaining quantity, exactly as _reserveJob's
   // ceiling check does. Read-only: no probe job is written.
-  function nextUpFor(printer) {
+  function nextUpFor(printer, tolerance) {
     const skip = [];
     while (true) {
       const row = db.prepare(candidateSql(PROJECTION_COLUMNS, skip.length)).get(
         printer.model, printer.group_name, printer.loaded_material, printer.loaded_color, ...skip
       );
       if (!row) return null;
+      // Slot check exactly as _reserveJob runs it (fresh reading required).
+      const slotCheck = slotMatch.evaluate(row.tool_filaments, printer, { now: Date.now(), tolerance });
+      if (slotCheck.applies && !slotCheck.ok) { skip.push(row.part_id); continue; }
       const remaining = Math.max(0, row.target_qty - row.completed_qty);
       if (activePartsStmt.get(row.part_id).total >= remaining) { skip.push(row.part_id); continue; }
       return row;
@@ -93,10 +103,16 @@ module.exports = (db, scheduler = null) => {
       "SELECT DISTINCT printer_id FROM jobs WHERE status IN ('uploading', 'printing')"
     ).all().map(r => r.printer_id));
     const nextUpCache = new Map();
+    const slotTolerance = slotMatch.readTolerance(db);
     return {
       busyPrinterIds,
+      slotTolerance,
+      // Multi-head filament slot check for one G-code on one printer (see server/slot-match.js).
+      slots(gc, printer) {
+        return slotMatch.evaluate(gc.tool_filaments, printer, { now: Date.now(), tolerance: slotTolerance });
+      },
       nextUp(printer) {
-        if (!nextUpCache.has(printer.id)) nextUpCache.set(printer.id, nextUpFor(printer));
+        if (!nextUpCache.has(printer.id)) nextUpCache.set(printer.id, nextUpFor(printer, slotTolerance));
         return nextUpCache.get(printer.id);
       },
     };
@@ -105,11 +121,13 @@ module.exports = (db, scheduler = null) => {
   // One printer's standing against one G-code's targeting. States are checked in the
   // same order the prose reasons use (group, then filament, then availability) so the
   // list and the sentence above it never disagree about why a printer is out.
-  function describePrinter(ctx, p, partId, { requiredMaterial, requiredColor, allowedGroups }) {
+  function describePrinter(ctx, p, partId, { requiredMaterial, requiredColor, allowedGroups, gc }) {
+    const slotCheck = gc ? ctx.slots(gc, p) : { applies: false };
     let state;
     if (allowedGroups && !allowedGroups.includes(p.group_name))          state = 'wrong_group';
     else if ((requiredMaterial && p.loaded_material !== requiredMaterial) ||
              (requiredColor    && p.loaded_color    !== requiredColor))  state = 'wrong_filament';
+    else if (slotCheck.applies && !slotCheck.ok)                         state = 'wrong_filament';
     else if (p.is_held === 1)                                            state = 'held';
     else if (!isDispatchReady(p) || ctx.busyPrinterIds.has(p.id))        state = 'busy';
     else                                                                 state = 'ready';
@@ -138,6 +156,11 @@ module.exports = (db, scheduler = null) => {
       loaded_color:    p.loaded_color,
       state,
       next_up:         nextUp,
+      // Multi-head printers only: why the loaded slots do not fit, or the tool-to-head
+      // map dispatch would use ([[tool, head index], ...]). Both null otherwise.
+      filament_slots:  parseSlots(p.filament_slots),
+      slot_reason:     slotCheck.applies && !slotCheck.ok ? slotCheck.reason : null,
+      tool_map:        slotCheck.applies && slotCheck.ok ? slotCheck.map : null,
     };
   }
 
@@ -197,7 +220,8 @@ module.exports = (db, scheduler = null) => {
         required_material: requiredMaterial,
         required_color:    requiredColor,
         allowed_groups:    allowedGroups,
-        printers:          modelPrinters.map(p => describePrinter(ctx, p, part.id, { requiredMaterial, requiredColor, allowedGroups })),
+        tool_filaments:    parseSlots(gc.tool_filaments),
+        printers:          modelPrinters.map(p => describePrinter(ctx, p, part.id, { requiredMaterial, requiredColor, allowedGroups, gc })),
         mismatch:          null,
       };
       gcodeDetails.push(detail);
@@ -226,13 +250,27 @@ module.exports = (db, scheduler = null) => {
         continue;
       }
 
+      // Multi-colour files on multi-head printers: every tool needs a loaded head.
+      const slotsOk = [];
+      const slotReasons = [];
+      for (const p of materialOk) {
+        const check = ctx.slots(gc, p);
+        if (check.applies && !check.ok) slotReasons.push(`${p.name}: ${check.reason}`);
+        else slotsOk.push(p);
+      }
+      if (slotsOk.length === 0) {
+        detail.mismatch = `${gc.filename}: no printer has the filaments this file needs loaded (${slotReasons.join('; ')})`;
+        notes.push(detail.mismatch);
+        continue;
+      }
+
       // Mirrors sweepIdlePrinters eligibility: unheld STOPPED printers are
       // dispatchable (Bambu latches the stopped state until the next print starts).
-      const ready = materialOk.filter(p => isDispatchReady(p) && !ctx.busyPrinterIds.has(p.id));
+      const ready = slotsOk.filter(p => isDispatchReady(p) && !ctx.busyPrinterIds.has(p.id));
       if (ready.length === 0) {
-        const held = materialOk.filter(p => p.is_held === 1).length;
+        const held = slotsOk.filter(p => p.is_held === 1).length;
         notes.push(
-          `${gc.filename}: all ${materialOk.length} matching printer(s) are busy` +
+          `${gc.filename}: all ${slotsOk.length} matching printer(s) are busy` +
           (held > 0 ? ` (${held} awaiting operator sign-off)` : '')
         );
       } else {

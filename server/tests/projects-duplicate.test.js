@@ -59,7 +59,7 @@ beforeAll(() => {
       allowed_groups   TEXT,
       required_material TEXT,
       required_color   TEXT,
-      created_at       INTEGER NOT NULL
+      created_at       INTEGER NOT NULL, tool_filaments TEXT
     );
   `);
 
@@ -339,6 +339,16 @@ describe('POST /api/projects/:id/duplicate — gcode DB records', () => {
     const newPartId = db.prepare('SELECT id FROM parts WHERE project_id = ?').get(newId).id;
     const newGcode  = db.prepare('SELECT * FROM gcodes WHERE part_id = ?').get(newPartId);
     expect(newGcode.ams_slot).toBe(2);
+  });
+
+  test('copies tool_filaments so a multi-colour copy is still slot-checked', async () => {
+    const tools = JSON.stringify([{ tool: 0, type: 'PLA', color: '#000000', grams: 3, mm: 1000 }]);
+    db.prepare('UPDATE gcodes SET tool_filaments = ? WHERE id = ?').run(tools, gcodeId);
+    const res       = await request(app).post(`/api/projects/${sourceId}/duplicate`).send({ name: 'July' });
+    const newId     = res.body.project.id;
+    const newPartId = db.prepare('SELECT id FROM parts WHERE project_id = ?').get(newId).id;
+    const newGcode  = db.prepare('SELECT * FROM gcodes WHERE part_id = ?').get(newPartId);
+    expect(newGcode.tool_filaments).toBe(tools);
   });
 
   test('copies filename', async () => {

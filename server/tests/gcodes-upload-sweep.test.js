@@ -60,7 +60,7 @@ beforeEach(() => {
       parts_per_plate INTEGER NOT NULL,
       est_print_secs INTEGER, material_grams REAL, ams_slot INTEGER,
       allowed_groups TEXT, required_material TEXT, required_color TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL, tool_filaments TEXT
     );
     CREATE TABLE printer_models (
       model_id TEXT PRIMARY KEY, label TEXT NOT NULL, connector TEXT NOT NULL
